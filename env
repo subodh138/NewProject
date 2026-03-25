@@ -1,4 +1,0 @@
-PORT=3000
-JWT_SECRET=greengive-super-secret-jwt-key-change-in-production-2025
-JWT_EXPIRES_IN=7d
-NODE_ENV=development

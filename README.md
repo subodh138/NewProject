@@ -14,26 +14,35 @@ npm install
 
 # 2. Set up environment
 cp .env.example .env
-# Edit .env with your JWT secret
+# Edit .env with your Supabase DATABASE_URL + JWT secret
 
-# 3. Seed the database (creates admin + demo user + charities + sample draw)
+# 3. Initialize the Postgres schema
+npm run db:check
+npm run db:init
+
+# 4. Optional: import your existing local SQLite data into Supabase
+npm run db:import
+
+# 5. Optional: seed demo data into Supabase
 npm run seed
 
-# 4. Start development server
+# 6. Start development server
 npm run dev
 
-# 5. Open in browser
+# 7. Open in browser
 open http://localhost:3000
 ```
 
 ---
 
-## 🔐 Default Credentials
+## 🔐 Local Default Credentials
 
 | Role       | Email                   | Password     |
 |------------|-------------------------|--------------|
 | Admin      | admin@greengive.com     | Admin@12345  |
 | Subscriber | demo@greengive.com      | Demo@12345   |
+
+These defaults are intended for local seeding only. For production or Vercel, set admin credentials with environment variables and avoid publishing demo users.
 
 ---
 
@@ -66,7 +75,12 @@ greengive/
 │   └── auth.js            # JWT authenticate, requireAdmin, requireSubscription
 │
 └── db/
-    ├── database.js        # SQLite init + schema
+    ├── database.js        # Postgres adapter + connection management
+    ├── schema.postgres.sql # Database schema for Supabase / Postgres
+    ├── init.js            # Initialize schema
+    ├── import-sqlite-to-postgres.js # One-time SQLite -> Supabase import
+    ├── bootstrap.js       # Optional runtime bootstrap seeding
+    ├── seedData.js        # Shared seed helpers
     └── seed.js            # Database seeder
 ```
 
@@ -147,7 +161,7 @@ greengive/
 
 ## 🗃️ Database Schema
 
-Built on **SQLite** via `better-sqlite3`. Tables:
+Built on **Postgres** for Supabase. Tables:
 
 - `users` — subscribers and admins
 - `charities` — charity listings with totals
@@ -180,22 +194,105 @@ Built on **SQLite** via `better-sqlite3`. Tables:
 | Layer    | Technology                            |
 |----------|---------------------------------------|
 | Backend  | Node.js + Express                     |
-| Database | SQLite (better-sqlite3)               |
+| Database | Supabase Postgres                     |
 | Auth     | JWT (jsonwebtoken) + bcryptjs         |
 | Frontend | Vanilla HTML/CSS/JS                   |
 | Fonts    | Playfair Display, DM Sans, DM Mono    |
-| Deploy   | Vercel (serverless) + Supabase (DB)   |
+| Deploy   | Vercel + Supabase                     |
 
 ---
 
 ## 🔧 Environment Variables
 
-| Variable        | Description                        | Default        |
-|-----------------|------------------------------------|----------------|
-| PORT            | Server port                        | 3000           |
-| JWT_SECRET      | JWT signing secret (change this!)  | —              |
-| JWT_EXPIRES_IN  | Token expiry                       | 7d             |
-| NODE_ENV        | Environment                        | development    |
+| Variable              | Description                                           | Default |
+|-----------------------|-------------------------------------------------------|---------|
+| PORT                  | Local server port                                     | 3000    |
+| HOST                  | Local server host                                     | 127.0.0.1 |
+| DATABASE_URL          | Supabase Postgres connection string                   | —       |
+| PGSSL                 | Set to `disable` only for local non-SSL Postgres      | require |
+| PG_POOL_MAX           | Max Postgres connections from the app                 | 10      |
+| JWT_SECRET            | JWT signing secret                                    | —       |
+| JWT_EXPIRES_IN        | Token expiry                                          | 7d      |
+| NODE_ENV              | Environment                                           | development |
+| BOOTSTRAP_PUBLIC_DATA | Seed charities and sample draws on app start          | false   |
+| SEED_ADMIN_EMAIL      | Admin email for runtime bootstrap or `npm run seed`   | —       |
+| SEED_ADMIN_PASSWORD   | Admin password for runtime bootstrap or `npm run seed`| —       |
+| SEED_ADMIN_NAME       | Admin display name                                    | GreenGive Admin |
+| SEED_DEMO_USER        | Whether to create a demo subscriber at runtime        | false   |
+| SEED_DEMO_EMAIL       | Demo subscriber email                                 | demo@greengive.com |
+| SEED_DEMO_PASSWORD    | Demo subscriber password                              | Demo@12345 |
+| SEED_DEMO_NAME        | Demo subscriber display name                          | Jamie Fairway |
+| SQLITE_PATH           | Existing SQLite file path for `npm run db:import`     | ./db/greengive.db |
+| IMPORT_TRUNCATE       | Allow import into a non-empty Postgres DB             | false   |
+
+---
+
+## ▲ Supabase Setup
+
+1. Create a new Supabase project.
+2. In the Supabase dashboard, open `Connect`.
+3. Copy a connection string from `Connect`.
+4. For local setup and import scripts, prefer the **Direct connection** or **Session pooler** string when available.
+5. Put that value into your local `.env` as `DATABASE_URL`.
+6. For Vercel runtime traffic later, use the **Transaction pooler** string.
+7. Set your database password in the copied URL.
+8. Verify the connection:
+
+```bash
+npm run db:check
+```
+
+9. Run:
+
+```bash
+npm run db:init
+```
+
+10. If you want to migrate your existing local SQLite data:
+
+```bash
+npm run db:import
+```
+
+11. If you want demo/sample content instead of importing:
+
+```bash
+npm run seed
+```
+
+### Recommended Supabase choices
+
+- Use the **Transaction pooler** connection string for Vercel runtime traffic.
+- Use a strong database password before deploying anything public.
+- Keep the default `public` schema unless you have a reason to customize it.
+- You do not need Supabase Auth for this app right now because the project already uses JWT auth in Express.
+
+## ▲ Deploying To Vercel
+
+This project is now Vercel-compatible as an Express app with static files in `public/`.
+
+1. Push the repo to GitHub.
+2. Import the repo into Vercel.
+3. Add at least these environment variables in Vercel:
+
+```bash
+DATABASE_URL=postgresql://postgres:[password]@db.project-ref.supabase.co:6543/postgres
+JWT_SECRET=your-strong-production-secret
+JWT_EXPIRES_IN=7d
+NODE_ENV=production
+SEED_ADMIN_EMAIL=admin@yourdomain.com
+SEED_ADMIN_PASSWORD=change-this-password
+```
+
+4. Optional runtime seed variables:
+
+```bash
+BOOTSTRAP_PUBLIC_DATA=true
+SEED_ADMIN_NAME=GreenGive Admin
+SEED_DEMO_USER=false
+```
+
+5. Deploy.
 
 ---
 
