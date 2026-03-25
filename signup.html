@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create Account · GreenGive</title>
+<link rel="stylesheet" href="/shared.css">
+<style>
+  .signup-wrap {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+  }
+
+  .signup-left {
+    padding: 80px 80px;
+    background: var(--black);
+    display: flex; flex-direction: column; justify-content: center;
+    overflow-y: auto;
+  }
+
+  .signup-right {
+    background: var(--green-deep);
+    padding: 80px 60px;
+    display: flex; flex-direction: column; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+
+  .signup-right::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(46,204,113,0.04) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(46,204,113,0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+
+  .signup-right-content { position: relative; z-index: 1; }
+
+  .signup-right-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.8rem; font-weight: 900; color: var(--white); margin-bottom: 10px;
+  }
+  .signup-right-title em { font-style: italic; color: var(--green-accent); }
+  .signup-right-sub { font-size: 0.875rem; color: var(--cream-dim); margin-bottom: 32px; line-height: 1.6; }
+
+  .step-tracker {
+    display: flex; gap: 0; margin-bottom: 40px;
+  }
+
+  .step-dot {
+    display: flex; flex-direction: column; align-items: center; flex: 1;
+    position: relative;
+  }
+
+  .step-dot::before {
+    content: '';
+    position: absolute; top: 14px; left: 50%; right: -50%;
+    height: 1px; background: rgba(255,255,255,0.1);
+  }
+  .step-dot:last-child::before { display: none; }
+
+  .step-circle {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Mono', monospace; font-size: 0.65rem;
+    color: var(--text-muted); margin-bottom: 8px; position: relative; z-index: 1;
+    transition: all 0.3s;
+  }
+
+  .step-dot.active .step-circle {
+    background: var(--green-accent); color: var(--black);
+    border-color: var(--green-accent); font-weight: 700;
+  }
+
+  .step-dot.done .step-circle {
+    background: rgba(46,204,113,0.2); color: var(--green-accent);
+    border-color: rgba(46,204,113,0.4);
+  }
+
+  .step-lbl { font-size: 0.65rem; color: var(--text-muted); text-align: center; letter-spacing: 0.06em; }
+
+  .signup-box { max-width: 480px; width: 100%; }
+
+  .signup-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem; font-weight: 900; color: var(--white); margin-bottom: 6px;
+  }
+
+  .signup-sub { font-size: 0.875rem; color: var(--text-muted); margin-bottom: 36px; }
+
+  /* Charity grid */
+  .charity-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    max-height: 360px; overflow-y: auto; padding-right: 4px;
+    margin-bottom: 20px;
+  }
+
+  .charity-opt {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; cursor: pointer; transition: all 0.2s;
+    position: relative;
+  }
+  .charity-opt:hover { border-color: rgba(46,204,113,0.3); }
+  .charity-opt.selected { border-color: var(--green-accent); background: rgba(46,204,113,0.05); }
+  .charity-opt.selected::after {
+    content: '✓';
+    position: absolute; top: 10px; right: 10px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--green-accent); color: var(--black);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.6rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+  }
+
+  .co-icon { font-size: 1.4rem; margin-bottom: 8px; }
+  .co-name { font-size: 0.82rem; font-weight: 600; color: var(--white); margin-bottom: 4px; }
+  .co-cat { font-size: 0.7rem; color: var(--text-muted); }
+
+  .pct-slider { width: 100%; margin: 16px 0; }
+  .pct-label {
+    display: flex; justify-content: space-between;
+    font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;
+  }
+  .pct-value {
+    font-family: 'DM Mono', monospace; font-size: 1.2rem;
+    font-weight: 700; color: var(--green-accent); text-align: center; margin: 8px 0;
+  }
+
+  input[type=range] {
+    width: 100%; -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 2px; outline: none;
+    background: linear-gradient(to right, var(--green-accent) 0%, rgba(255,255,255,0.1) 0%);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px;
+    border-radius: 50%; background: var(--green-accent);
+    cursor: pointer; border: 2px solid var(--black);
+  }
+
+  /* Plan cards */
+  .plan-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+  .plan-opt {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 20px; cursor: pointer; transition: all 0.2s;
+    text-align: center;
+  }
+  .plan-opt:hover { border-color: rgba(46,204,113,0.3); }
+  .plan-opt.selected { border-color: var(--green-accent); background: rgba(46,204,113,0.06); }
+  .plan-opt-name { font-family: 'DM Mono', monospace; font-size: 0.7rem; letter-spacing: 0.12em; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; }
+  .plan-opt-price { font-family: 'Playfair Display', serif; font-size: 1.8rem; font-weight: 900; color: var(--white); }
+  .plan-opt-price sup { font-size: 0.9rem; vertical-align: super; color: var(--green-accent); }
+  .plan-opt-price sub { font-size: 0.75rem; font-family: 'DM Sans', sans-serif; color: var(--text-muted); }
+  .plan-save { font-size: 0.7rem; color: var(--gold); margin-top: 4px; }
+
+  /* Step navigation */
+  .step-nav { display: flex; gap: 12px; margin-top: 28px; }
+
+  @media (max-width: 1000px) {
+    .signup-wrap { grid-template-columns: 1fr; }
+    .signup-right { display: none; }
+    .signup-left { padding: 80px 24px; align-items: center; }
+  }
+</style>
+</head>
+<body>
+<div class="signup-wrap">
+  <!-- LEFT: form -->
+  <div class="signup-left">
+    <div class="signup-box">
+      <a href="/" class="gg-logo" style="display:block;margin-bottom:40px;">Green<span>Give</span></a>
+
+      <!-- Step tracker -->
+      <div class="step-tracker" id="stepTracker">
+        <div class="step-dot active" id="step-dot-1"><div class="step-circle">1</div><div class="step-lbl">Account</div></div>
+        <div class="step-dot" id="step-dot-2"><div class="step-circle">2</div><div class="step-lbl">Charity</div></div>
+        <div class="step-dot" id="step-dot-3"><div class="step-circle">3</div><div class="step-lbl">Subscribe</div></div>
+      </div>
+
+      <!-- STEP 1: Account details -->
+      <div id="step1">
+        <div class="signup-title">Create your account</div>
+        <div class="signup-sub">Join GreenGive and play for good</div>
+
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input type="text" class="form-input" id="name" placeholder="Jamie Fairway" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" class="form-input" id="email" placeholder="you@example.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" class="form-input" id="password" placeholder="Minimum 6 characters" required minlength="6">
+        </div>
+        <div class="form-error hidden" id="step1Error"></div>
+
+        <div class="step-nav">
+          <button class="btn-primary w-full" onclick="goStep2()">Continue →</button>
+        </div>
+
+        <div style="text-align:center;margin-top:24px;font-size:0.85rem;color:var(--text-muted);">
+          Already have an account? <a href="/login" style="color:var(--green-accent);text-decoration:none;">Sign in</a>
+        </div>
+      </div>
+
+      <!-- STEP 2: Charity selection -->
+      <div id="step2" class="hidden">
+        <div class="signup-title">Choose your charity</div>
+        <div class="signup-sub">A minimum of 10% of your subscription goes here</div>
+
+        <div class="charity-grid" id="charityGrid">
+          <div class="flex-center" style="grid-column:1/-1;padding:40px;color:var(--text-muted);">
+            <span class="spinner"></span>&nbsp; Loading charities…
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="pct-label">
+            <span>Contribution Percentage</span>
+            <span style="color:var(--green-accent);">Minimum 10%</span>
+          </div>
+          <div class="pct-value" id="pctDisplay">10%</div>
+          <input type="range" id="charityPct" min="10" max="100" value="10" oninput="updatePct(this.value)">
+          <div class="pct-label" style="margin-top:6px;">
+            <span>10% (min)</span><span>100%</span>
+          </div>
+        </div>
+
+        <div class="form-error hidden" id="step2Error"></div>
+        <div class="step-nav">
+          <button class="btn-secondary" onclick="goStep(1)">← Back</button>
+          <button class="btn-primary w-full" onclick="goStep3()">Continue →</button>
+        </div>
+      </div>
+
+      <!-- STEP 3: Plan -->
+      <div id="step3" class="hidden">
+        <div class="signup-title">Pick your plan</div>
+        <div class="signup-sub">Both plans include full platform access</div>
+
+        <div class="plan-row">
+          <div class="plan-opt selected" id="plan-monthly" onclick="selectPlan('monthly')">
+            <div class="plan-opt-name">Monthly</div>
+            <div class="plan-opt-price"><sup>£</sup>9<sub>.99/mo</sub></div>
+          </div>
+          <div class="plan-opt" id="plan-yearly" onclick="selectPlan('yearly')">
+            <div class="plan-opt-name">Yearly</div>
+            <div class="plan-opt-price"><sup>£</sup>99<sub>/yr</sub></div>
+            <div class="plan-save">Save £20 ↗</div>
+          </div>
+        </div>
+
+        <div class="gg-card" style="padding:20px;margin-bottom:20px;background:rgba(46,204,113,0.04);">
+          <div style="font-size:0.8rem;color:var(--cream-dim);line-height:1.8;">
+            ✓ &nbsp;Enter monthly prize draws<br>
+            ✓ &nbsp;Score tracking (rolling 5)<br>
+            ✓ &nbsp;Charity contributions<br>
+            ✓ &nbsp;Winner verification portal
+          </div>
+        </div>
+
+        <div class="form-error hidden" id="step3Error"></div>
+        <div class="step-nav">
+          <button class="btn-secondary" onclick="goStep(2)">← Back</button>
+          <button class="btn-primary w-full" id="createBtn" onclick="createAccount()">
+            <span id="createBtnTxt">Create Account & Subscribe</span>
+            <span class="spinner hidden" id="createSpinner"></span>
+          </button>
+        </div>
+        <div style="text-align:center;margin-top:16px;font-size:0.75rem;color:var(--text-muted);">
+          By signing up you agree to our Terms of Service
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: visual -->
+  <div class="signup-right">
+    <div class="signup-right-content">
+      <div class="signup-right-title">Your golf.<br><em>Their future.</em></div>
+      <div class="signup-right-sub">Every subscription contributes to real charitable work — and gives you a shot at the monthly prize pool.</div>
+      <div style="display:flex;flex-direction:column;gap:20px;">
+        <div class="gg-card" style="padding:20px 24px;display:flex;gap:16px;align-items:center;">
+          <div style="font-size:1.6rem;">🎯</div>
+          <div>
+            <div style="font-size:0.9rem;font-weight:600;color:var(--white);margin-bottom:3px;">Monthly Prize Draw</div>
+            <div style="font-size:0.78rem;color:var(--text-muted);">Match 5 of your scores to win the jackpot pool</div>
+          </div>
+        </div>
+        <div class="gg-card" style="padding:20px 24px;display:flex;gap:16px;align-items:center;">
+          <div style="font-size:1.6rem;">🌍</div>
+          <div>
+            <div style="font-size:0.9rem;font-weight:600;color:var(--white);margin-bottom:3px;">Charity Impact</div>
+            <div style="font-size:0.78rem;color:var(--text-muted);">10–100% of your sub goes to your chosen cause</div>
+          </div>
+        </div>
+        <div class="gg-card" style="padding:20px 24px;display:flex;gap:16px;align-items:center;">
+          <div style="font-size:1.6rem;">⛳</div>
+          <div>
+            <div style="font-size:0.9rem;font-weight:600;color:var(--white);margin-bottom:3px;">Stableford Tracking</div>
+            <div style="font-size:0.78rem;color:var(--text-muted);">Log your last 5 rounds, your scores enter the draw</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="gg-toast"></div>
+
+<script>
+  let selectedCharityId = null;
+  let selectedPlan = 'monthly';
+  let currentStep = 1;
+
+  // ── Step navigation ──
+  function goStep(n) {
+    document.getElementById(`step${currentStep}`).classList.add('hidden');
+    document.getElementById(`step-dot-${currentStep}`).classList.remove('active');
+    document.getElementById(`step-dot-${currentStep}`).classList.add('done');
+    currentStep = n;
+    document.getElementById(`step${n}`).classList.remove('hidden');
+    document.getElementById(`step-dot-${n}`).classList.remove('done');
+    document.getElementById(`step-dot-${n}`).classList.add('active');
+  }
+
+  function goStep2() {
+    const name = document.getElementById('name').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const pass = document.getElementById('password').value;
+    const err = document.getElementById('step1Error');
+    if (!name || !email || !pass) { err.textContent = 'All fields are required.'; err.classList.remove('hidden'); return; }
+    if (pass.length < 6) { err.textContent = 'Password must be at least 6 characters.'; err.classList.remove('hidden'); return; }
+    err.classList.add('hidden');
+    goStep(2);
+    loadCharities();
+  }
+
+  function goStep3() {
+    const err = document.getElementById('step2Error');
+    if (!selectedCharityId) { err.textContent = 'Please select a charity.'; err.classList.remove('hidden'); return; }
+    err.classList.add('hidden');
+    goStep(3);
+  }
+
+  // ── Charity loading ──
+  async function loadCharities() {
+    const grid = document.getElementById('charityGrid');
+    try {
+      const res = await fetch('/api/charities');
+      const charities = await res.json();
+      grid.innerHTML = charities.map(c => `
+        <div class="charity-opt" id="co-${c.id}" onclick="selectCharity('${c.id}')">
+          <div class="co-icon">${c.icon}</div>
+          <div class="co-name">${c.name}</div>
+          <div class="co-cat">${c.category}</div>
+        </div>
+      `).join('');
+    } catch {
+      grid.innerHTML = '<div style="color:var(--text-muted);font-size:0.875rem;grid-column:1/-1;">Failed to load charities.</div>';
+    }
+  }
+
+  function selectCharity(id) {
+    document.querySelectorAll('.charity-opt').forEach(el => el.classList.remove('selected'));
+    document.getElementById(`co-${id}`).classList.add('selected');
+    selectedCharityId = id;
+    document.getElementById('step2Error').classList.add('hidden');
+  }
+
+  function updatePct(v) {
+    document.getElementById('pctDisplay').textContent = v + '%';
+    const slider = document.getElementById('charityPct');
+    const pct = ((v - 10) / 90) * 100;
+    slider.style.background = `linear-gradient(to right, var(--green-accent) ${pct}%, rgba(255,255,255,0.1) ${pct}%)`;
+  }
+
+  function selectPlan(p) {
+    selectedPlan = p;
+    document.getElementById('plan-monthly').classList.toggle('selected', p === 'monthly');
+    document.getElementById('plan-yearly').classList.toggle('selected', p === 'yearly');
+  }
+
+  // ── Create account ──
+  async function createAccount() {
+    const btn = document.getElementById('createBtn');
+    const spinner = document.getElementById('createSpinner');
+    const txt = document.getElementById('createBtnTxt');
+    btn.disabled = true; spinner.classList.remove('hidden'); txt.textContent = 'Creating account…';
+
+    const payload = {
+      name: document.getElementById('name').value.trim(),
+      email: document.getElementById('email').value.trim(),
+      password: document.getElementById('password').value,
+      charityId: selectedCharityId,
+      charityPct: parseInt(document.getElementById('charityPct').value),
+    };
+
+    try {
+      // 1. Create account
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Signup failed');
+
+      localStorage.setItem('gg_token', data.token);
+      localStorage.setItem('gg_user', JSON.stringify(data.user));
+
+      // 2. Subscribe to plan
+      await fetch('/api/user/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${data.token}` },
+        body: JSON.stringify({ plan: selectedPlan }),
+      });
+
+      showToast('Account created! Welcome to GreenGive 🎉', 'success');
+      setTimeout(() => { window.location.href = '/dashboard'; }, 800);
+    } catch (e) {
+      const err = document.getElementById('step3Error');
+      err.textContent = e.message; err.classList.remove('hidden');
+      btn.disabled = false; spinner.classList.add('hidden'); txt.textContent = 'Create Account & Subscribe';
+    }
+  }
+
+  function showToast(msg, type = 'success') {
+    const container = document.getElementById('gg-toast');
+    const t = document.createElement('div');
+    t.className = `toast ${type}`;
+    t.innerHTML = `<span class="toast-icon">${type === 'success' ? '✓' : '✕'}</span><span>${msg}</span>`;
+    container.appendChild(t);
+    setTimeout(() => t.remove(), 3500);
+  }
+</script>
+</body>
+</html>

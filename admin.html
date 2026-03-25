@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin · GreenGive</title>
+<link rel="stylesheet" href="/shared.css">
+<style>
+  .admin-layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+
+  /* ── SIDEBAR ── */
+  .admin-sidebar {
+    background: #060c07; border-right: 1px solid rgba(201,168,76,0.15);
+    padding: 28px 0; position: sticky; top: 0; height: 100vh;
+    display: flex; flex-direction: column; overflow-y: auto;
+  }
+
+  .admin-logo { padding: 0 24px 28px; border-bottom: 1px solid rgba(201,168,76,0.1); margin-bottom: 16px; }
+  .admin-logo-text { font-family: 'Playfair Display', serif; font-size: 1.3rem; font-weight: 900; color: var(--white); }
+  .admin-logo-text span { color: var(--gold); }
+  .admin-badge { display: inline-block; font-family: 'DM Mono', monospace; font-size: 0.58rem; letter-spacing: 0.12em; color: var(--gold); background: rgba(201,168,76,0.1); border: 1px solid rgba(201,168,76,0.2); padding: 2px 8px; border-radius: 2px; margin-top: 4px; text-transform: uppercase; }
+
+  .admin-nav { flex: 1; }
+  .admin-section { padding: 12px 16px 4px; font-family: 'DM Mono', monospace; font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(201,168,76,0.5); }
+
+  .admin-link {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 24px; color: var(--text-muted); text-decoration: none;
+    font-size: 0.875rem; transition: all 0.2s; cursor: pointer;
+    border: none; background: none; width: 100%; text-align: left;
+  }
+  .admin-link:hover { color: var(--cream); background: rgba(255,255,255,0.03); }
+  .admin-link.active { color: var(--gold); background: rgba(201,168,76,0.07); border-left: 2px solid var(--gold); }
+  .admin-link .icon { font-size: 1rem; width: 20px; }
+
+  .admin-footer { padding: 20px 24px; border-top: 1px solid rgba(201,168,76,0.1); }
+  .admin-footer-user { font-weight: 600; font-size: 0.875rem; color: var(--white); margin-bottom: 2px; }
+  .admin-footer-role { font-size: 0.72rem; color: var(--gold); }
+  .admin-logout { display: block; margin-top: 12px; font-size: 0.78rem; color: var(--text-muted); cursor: pointer; background: none; border: none; }
+  .admin-logout:hover { color: var(--red); }
+
+  /* ── MAIN ── */
+  .admin-main { background: var(--black); min-height: 100vh; }
+
+  .admin-topbar {
+    padding: 20px 40px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(6,12,7,0.95); position: sticky; top: 0; z-index: 10;
+    backdrop-filter: blur(10px);
+  }
+
+  .admin-topbar-title { font-family: 'Playfair Display', serif; font-size: 1.3rem; font-weight: 700; color: var(--white); }
+  .admin-topbar-sub { font-size: 0.8rem; color: var(--text-muted); }
+
+  .admin-content { padding: 36px 40px; }
+
+  /* ── PANELS ── */
+  .apanel { display: none; }
+  .apanel.active { display: block; }
+
+  /* ── STATS ── */
+  .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+  .kpi { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 22px 24px; position: relative; overflow: hidden; }
+  .kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+  .kpi.gold-kpi::before { background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+  .kpi.green-kpi::before { background: linear-gradient(90deg, transparent, var(--green-accent), transparent); }
+  .kpi-lbl { font-family: 'DM Mono', monospace; font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+  .kpi-val { font-family: 'Playfair Display', serif; font-size: 2rem; font-weight: 900; color: var(--white); line-height: 1; }
+  .kpi-val.gold { color: var(--gold); }
+  .kpi-val.green { color: var(--green-accent); }
+  .kpi-val.red { color: var(--red); }
+  .kpi-hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; }
+
+  /* ── TABLE ── */
+  .admin-table { width: 100%; border-collapse: collapse; }
+  .admin-table th { font-family: 'DM Mono', monospace; font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .admin-table td { padding: 13px 14px; font-size: 0.85rem; color: var(--cream-dim); border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+  .admin-table tr:last-child td { border-bottom: none; }
+  .admin-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* ── TOOLBAR ── */
+  .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+  .toolbar-search { flex: 1; min-width: 200px; }
+  .toolbar-filter select { background: var(--card-bg); border: 1px solid var(--border); color: var(--cream); padding: 10px 14px; border-radius: 6px; font-family: 'DM Sans', sans-serif; font-size: 0.875rem; outline: none; }
+
+  /* ── MODAL ── */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 24px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: #0c180e; border: 1px solid var(--border); border-radius: 14px; padding: 36px; max-width: 520px; width: 100%; max-height: 90vh; overflow-y: auto; animation: modal-in 0.25s ease; }
+  @keyframes modal-in { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .modal-title { font-family: 'Playfair Display', serif; font-size: 1.3rem; font-weight: 900; color: var(--white); margin-bottom: 6px; }
+  .modal-sub { font-size: 0.825rem; color: var(--text-muted); margin-bottom: 24px; }
+  .modal-actions { display: flex; gap: 12px; margin-top: 24px; }
+  .modal-close { position: absolute; top: 20px; right: 20px; background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; }
+
+  /* ── DRAW SIM ── */
+  .sim-balls { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+  .sim-ball {
+    width: 48px; height: 48px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Playfair Display', serif; font-size: 1.1rem; font-weight: 900;
+    background: var(--green-mid); border: 1px solid rgba(46,204,113,0.3); color: var(--white);
+    transition: all 0.5s; opacity: 0; transform: scale(0.5);
+  }
+  .sim-ball.show { opacity: 1; transform: scale(1); }
+
+  .sim-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 16px; }
+  .sim-stat { background: rgba(255,255,255,0.04); border-radius: 8px; padding: 14px; text-align: center; }
+  .sim-stat-n { font-family: 'Playfair Display', serif; font-size: 1.4rem; font-weight: 900; color: var(--white); }
+  .sim-stat-l { font-size: 0.7rem; color: var(--text-muted); margin-top: 4px; }
+
+  @media (max-width: 1000px) {
+    .admin-layout { grid-template-columns: 1fr; }
+    .admin-sidebar { display: none; }
+    .kpi-row { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="admin-layout">
+  <!-- SIDEBAR -->
+  <aside class="admin-sidebar">
+    <div class="admin-logo">
+      <div class="admin-logo-text">Green<span>Give</span></div>
+      <div class="admin-badge">Admin Panel</div>
+    </div>
+    <nav class="admin-nav">
+      <div class="admin-section">Overview</div>
+      <button class="admin-link active" onclick="showAdminPanel('analytics')"><span class="icon">📊</span> Analytics</button>
+      <div class="admin-section">Management</div>
+      <button class="admin-link" onclick="showAdminPanel('users')"><span class="icon">👥</span> Users</button>
+      <button class="admin-link" onclick="showAdminPanel('draws')"><span class="icon">🎯</span> Draws</button>
+      <button class="admin-link" onclick="showAdminPanel('charities')"><span class="icon">🌍</span> Charities</button>
+      <button class="admin-link" onclick="showAdminPanel('winners')"><span class="icon">🏆</span> Winners</button>
+    </nav>
+    <div class="admin-footer">
+      <div class="admin-footer-user" id="adm-name">Admin</div>
+      <div class="admin-footer-role">Platform Administrator</div>
+      <button class="admin-logout" onclick="logout()">← Sign out</button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="admin-main">
+    <div class="admin-topbar">
+      <div>
+        <div class="admin-topbar-title" id="adm-panel-title">Analytics</div>
+        <div class="admin-topbar-sub" id="adm-panel-sub">Platform overview</div>
+      </div>
+      <span class="badge badge-gold">● Admin</span>
+    </div>
+
+    <div class="admin-content">
+      <div id="adm-loading" class="flex-center" style="padding:80px;gap:12px;">
+        <span class="spinner"></span><span style="color:var(--text-muted);">Loading…</span>
+      </div>
+
+      <!-- ANALYTICS -->
+      <div class="apanel" id="apanel-analytics">
+        <div class="kpi-row">
+          <div class="kpi green-kpi"><div class="kpi-lbl">Total Users</div><div class="kpi-val green" id="kpi-users">—</div><div class="kpi-hint">Registered subscribers</div></div>
+          <div class="kpi green-kpi"><div class="kpi-lbl">Active Subscribers</div><div class="kpi-val green" id="kpi-active">—</div><div class="kpi-hint">Currently subscribed</div></div>
+          <div class="kpi gold-kpi"><div class="kpi-lbl">Total Revenue</div><div class="kpi-val gold" id="kpi-revenue">—</div><div class="kpi-hint">All-time payments</div></div>
+          <div class="kpi gold-kpi"><div class="kpi-lbl">Charity Total</div><div class="kpi-val gold" id="kpi-charity">—</div><div class="kpi-hint">Contributed to charities</div></div>
+          <div class="kpi"><div class="kpi-lbl">Total Draws</div><div class="kpi-val" id="kpi-draws">—</div><div class="kpi-hint">Published & pending</div></div>
+          <div class="kpi"><div class="kpi-lbl">Pending Winners</div><div class="kpi-val red" id="kpi-pending">—</div><div class="kpi-hint">Awaiting verification</div></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:24px;">
+          <div class="gg-card">
+            <div style="font-family:'Playfair Display',serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:16px;">Recent Users</div>
+            <div id="recent-users-list"><div style="color:var(--text-muted);">Loading…</div></div>
+          </div>
+          <div class="gg-card">
+            <div style="font-family:'Playfair Display',serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:16px;">Recent Draws</div>
+            <div id="recent-draws-list"><div style="color:var(--text-muted);">Loading…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- USERS -->
+      <div class="apanel" id="apanel-users">
+        <div class="toolbar">
+          <div class="toolbar-search form-group" style="margin:0;">
+            <input type="text" class="form-input" id="user-search" placeholder="Search by name or email…" oninput="searchUsers(this.value)" style="min-width:280px;">
+          </div>
+          <div class="toolbar-filter">
+            <select onchange="filterUserStatus(this.value)">
+              <option value="">All Status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div style="margin-left:auto;"><span id="user-count" class="badge badge-grey">0 users</span></div>
+        </div>
+        <div class="gg-card" style="padding:0;overflow:hidden;">
+          <div id="users-table-wrap" style="overflow-x:auto;">
+            <div style="padding:40px;text-align:center;color:var(--text-muted);">Loading users…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DRAWS -->
+      <div class="apanel" id="apanel-draws">
+        <div class="toolbar">
+          <button class="btn-primary" onclick="openNewDrawModal()">+ New Draw</button>
+        </div>
+        <div class="gg-card" style="padding:0;overflow:hidden;">
+          <div id="draws-table-wrap"><div style="padding:40px;text-align:center;color:var(--text-muted);">Loading…</div></div>
+        </div>
+      </div>
+
+      <!-- CHARITIES -->
+      <div class="apanel" id="apanel-charities">
+        <div class="toolbar">
+          <button class="btn-primary" onclick="openNewCharityModal()">+ Add Charity</button>
+        </div>
+        <div id="charities-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;">
+          <div style="color:var(--text-muted);">Loading…</div>
+        </div>
+      </div>
+
+      <!-- WINNERS -->
+      <div class="apanel" id="apanel-winners">
+        <div class="gg-card" style="padding:0;overflow:hidden;">
+          <div id="winners-table-wrap"><div style="padding:40px;text-align:center;color:var(--text-muted);">Loading…</div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- MODAL: New Draw -->
+<div class="modal-overlay" id="modal-draw">
+  <div class="modal" style="position:relative;">
+    <button class="modal-close" onclick="closeModal('modal-draw')">✕</button>
+    <div class="modal-title">Create New Draw</div>
+    <div class="modal-sub">Configure and schedule a monthly prize draw</div>
+    <div class="form-group"><label class="form-label">Draw Title</label><input type="text" class="form-input" id="draw-title" placeholder="March 2025 Draw"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label class="form-label">Month</label>
+        <select class="form-input" id="draw-month">
+          ${Array.from({length:12},(_,i)=>`<option value="${i+1}">${new Date(0,i).toLocaleString('en',{month:'long'})}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Year</label><input type="number" class="form-input" id="draw-year" value="${new Date().getFullYear()}" min="2024"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Draw Type</label>
+      <select class="form-input" id="draw-type">
+        <option value="random">Random (standard lottery)</option>
+        <option value="algorithmic">Algorithmic (frequency-weighted)</option>
+      </select>
+    </div>
+    <div class="form-error hidden mt-8" id="draw-error"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-draw')">Cancel</button>
+      <button class="btn-primary" onclick="createDraw()">Create Draw</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Simulate Draw -->
+<div class="modal-overlay" id="modal-simulate">
+  <div class="modal" style="position:relative;max-width:560px;">
+    <button class="modal-close" onclick="closeModal('modal-simulate')">✕</button>
+    <div class="modal-title">Simulate Draw</div>
+    <div class="modal-sub" id="sim-draw-title">—</div>
+    <div class="mono" style="font-size:0.62rem;letter-spacing:0.12em;color:var(--text-muted);margin-bottom:10px;">SIMULATED NUMBERS</div>
+    <div class="sim-balls" id="sim-balls"></div>
+    <div class="sim-stats" id="sim-stats" style="display:none;"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="runSimulation()">Re-run Simulation</button>
+      <button class="btn-primary" onclick="publishDraw()">Publish Official Draw</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: New Charity -->
+<div class="modal-overlay" id="modal-charity">
+  <div class="modal" style="position:relative;">
+    <button class="modal-close" onclick="closeModal('modal-charity')">✕</button>
+    <div class="modal-title">Add New Charity</div>
+    <div class="modal-sub">Add a charity for subscribers to support</div>
+    <div class="form-group"><label class="form-label">Name</label><input type="text" class="form-input" id="ch-name" placeholder="Charity name"></div>
+    <div class="form-group"><label class="form-label">Description</label><textarea class="form-input" id="ch-desc" rows="3" placeholder="What does this charity do?" style="resize:vertical;"></textarea></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label class="form-label">Category</label><input type="text" class="form-input" id="ch-cat" placeholder="e.g. Health, Children"></div>
+      <div class="form-group"><label class="form-label">Icon (emoji)</label><input type="text" class="form-input" id="ch-icon" placeholder="🌿" maxlength="4"></div>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:12px;">
+      <input type="checkbox" id="ch-featured" style="width:16px;height:16px;accent-color:var(--green-accent);">
+      <label for="ch-featured" style="font-size:0.875rem;color:var(--cream-dim);">Featured charity (homepage spotlight)</label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-charity')">Cancel</button>
+      <button class="btn-primary" onclick="saveCharity()">Add Charity</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: User Detail -->
+<div class="modal-overlay" id="modal-user">
+  <div class="modal" style="position:relative;max-width:560px;">
+    <button class="modal-close" onclick="closeModal('modal-user')">✕</button>
+    <div class="modal-title" id="modal-user-title">User Detail</div>
+    <div id="modal-user-body"><div style="color:var(--text-muted);">Loading…</div></div>
+  </div>
+</div>
+
+<div id="gg-toast"></div>
+
+<script>
+  const token = localStorage.getItem('gg_token');
+  const adminUser = JSON.parse(localStorage.getItem('gg_user') || 'null');
+  if (!token || !adminUser || adminUser.role !== 'admin') {
+    window.location.href = '/login';
+  }
+
+  document.getElementById('adm-name').textContent = adminUser?.name || 'Admin';
+
+  let currentSimDrawId = null;
+  let allUsers = [], allDraws = [], allCharities = [];
+
+  async function api(path, options = {}) {
+    const res = await fetch(path, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...options.headers }, ...options });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  }
+
+  // ── Load all ──
+  async function loadAll() {
+    try {
+      const [analytics, users, draws, charities, winners] = await Promise.all([
+        api('/api/admin/analytics'),
+        api('/api/admin/users'),
+        api('/api/admin/draws'),
+        api('/api/charities'),
+        api('/api/admin/winners'),
+      ]);
+      allUsers = users; allDraws = draws; allCharities = charities;
+
+      document.getElementById('adm-loading').style.display = 'none';
+      renderAnalytics(analytics);
+      renderUsersTable(users);
+      renderDrawsTable(draws);
+      renderCharitiesGrid(charities);
+      renderWinnersTable(winners);
+      showAdminPanel('analytics');
+    } catch (e) { console.error(e); showToast('Failed to load', 'error'); }
+  }
+
+  // ── Analytics ──
+  function renderAnalytics(data) {
+    document.getElementById('kpi-users').textContent = data.totalUsers;
+    document.getElementById('kpi-active').textContent = data.activeSubscribers;
+    document.getElementById('kpi-revenue').textContent = '£' + data.totalRevenue.toFixed(2);
+    document.getElementById('kpi-charity').textContent = '£' + data.charityTotal.toFixed(2);
+    document.getElementById('kpi-draws').textContent = data.drawCount;
+    document.getElementById('kpi-pending').textContent = data.pendingWinners;
+
+    document.getElementById('recent-users-list').innerHTML = data.recentUsers.map(u => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+        <div>
+          <div style="font-size:0.875rem;color:var(--white);font-weight:500;">${u.name}</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">${u.email}</div>
+        </div>
+        <span class="badge ${u.sub_status==='active'?'badge-green':'badge-grey'}">${u.sub_status}</span>
+      </div>
+    `).join('');
+
+    document.getElementById('recent-draws-list').innerHTML = data.recentDraws.map(d => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+        <div style="font-size:0.875rem;color:var(--white);">${d.title}</div>
+        <span class="badge ${d.status==='published'?'badge-green':'badge-grey'}">${d.status}</span>
+      </div>
+    `).join('');
+  }
+
+  // ── Users ──
+  function renderUsersTable(users) {
+    document.getElementById('user-count').textContent = `${users.length} users`;
+    const wrap = document.getElementById('users-table-wrap');
+    if (!users.length) { wrap.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">No users found.</div>'; return; }
+    wrap.innerHTML = `<table class="admin-table">
+      <thead><tr><th>Name</th><th>Email</th><th>Plan</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead>
+      <tbody>${users.map(u=>`
+        <tr>
+          <td style="color:var(--white);font-weight:500;">${u.name}</td>
+          <td>${u.email}</td>
+          <td>${u.plan ? `<span class="badge badge-grey">${u.plan}</span>` : '—'}</td>
+          <td><span class="badge ${u.sub_status==='active'?'badge-green':u.sub_status==='cancelled'?'badge-red':'badge-grey'}">${u.sub_status}</span></td>
+          <td>${new Date(u.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</td>
+          <td style="display:flex;gap:8px;">
+            <button class="badge badge-grey" style="cursor:pointer;" onclick="viewUser('${u.id}')">View</button>
+            <button class="badge badge-red" style="cursor:pointer;" onclick="deleteUser('${u.id}')">Delete</button>
+          </td>
+        </tr>
+      `).join('')}</tbody>
+    </table>`;
+  }
+
+  async function viewUser(id) {
+    const modal = document.getElementById('modal-user');
+    const body = document.getElementById('modal-user-body');
+    modal.classList.add('open');
+    body.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px;"><span class="spinner"></span></div>';
+    try {
+      const u = await api(`/api/admin/users/${id}`);
+      document.getElementById('modal-user-title').textContent = u.name;
+      body.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+          <div><div class="kpi-lbl">Email</div><div style="font-size:0.85rem;color:var(--cream);">${u.email}</div></div>
+          <div><div class="kpi-lbl">Plan</div><div style="font-size:0.85rem;color:var(--cream);">${u.plan || '—'}</div></div>
+          <div><div class="kpi-lbl">Status</div><span class="badge ${u.sub_status==='active'?'badge-green':'badge-grey'}">${u.sub_status}</span></div>
+          <div><div class="kpi-lbl">Handicap</div><div style="font-size:0.85rem;color:var(--cream);">${u.handicap || 0}</div></div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <div class="kpi-lbl" style="margin-bottom:8px;">Scores</div>
+          ${u.scores.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${u.scores.map(s=>`<div style="width:40px;height:40px;border-radius:50%;background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.25);display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-weight:900;color:var(--white);">${s.score}</div>`).join('')}</div>` : '<div style="color:var(--text-muted);font-size:0.825rem;">No scores</div>'}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Edit Status</label>
+          <select class="form-input" id="edit-status-${u.id}">
+            <option ${u.sub_status==='active'?'selected':''} value="active">Active</option>
+            <option ${u.sub_status==='inactive'?'selected':''} value="inactive">Inactive</option>
+            <option ${u.sub_status==='cancelled'?'selected':''} value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <button class="btn-primary" onclick="updateUserStatus('${u.id}')">Update Status</button>
+      `;
+    } catch { body.innerHTML = '<div style="color:var(--red);">Failed to load user.</div>'; }
+  }
+
+  async function updateUserStatus(id) {
+    const status = document.getElementById(`edit-status-${id}`).value;
+    try {
+      await api(`/api/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify({ sub_status: status }) });
+      showToast('User updated!', 'success');
+      closeModal('modal-user');
+      const users = await api('/api/admin/users');
+      allUsers = users; renderUsersTable(users);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function deleteUser(id) {
+    if (!confirm('Permanently delete this user?')) return;
+    try {
+      await api(`/api/admin/users/${id}`, { method: 'DELETE' });
+      showToast('User deleted', 'success');
+      const users = await api('/api/admin/users');
+      allUsers = users; renderUsersTable(users);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  function searchUsers(q) {
+    const filtered = allUsers.filter(u => u.name.toLowerCase().includes(q.toLowerCase()) || u.email.toLowerCase().includes(q.toLowerCase()));
+    renderUsersTable(filtered);
+  }
+
+  function filterUserStatus(s) {
+    const filtered = s ? allUsers.filter(u => u.sub_status === s) : allUsers;
+    renderUsersTable(filtered);
+  }
+
+  // ── Draws ──
+  function renderDrawsTable(draws) {
+    const wrap = document.getElementById('draws-table-wrap');
+    if (!draws.length) { wrap.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">No draws yet. Create one!</div>'; return; }
+    wrap.innerHTML = `<table class="admin-table">
+      <thead><tr><th>Title</th><th>Month/Year</th><th>Type</th><th>Pool</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>${draws.map(d=>`
+        <tr>
+          <td style="color:var(--white);font-weight:500;">${d.title}</td>
+          <td class="mono" style="font-size:0.78rem;">${d.month}/${d.year}</td>
+          <td><span class="badge badge-grey">${d.draw_type}</span></td>
+          <td style="color:var(--gold);">£${d.total_pool}</td>
+          <td><span class="badge ${d.status==='published'?'badge-green':d.status==='pending'?'badge-grey':'badge-gold'}">${d.status}</span></td>
+          <td style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${d.status !== 'published' ? `
+              <button class="badge badge-grey" style="cursor:pointer;" onclick="openSimulateModal('${d.id}','${d.title}')">Simulate</button>
+              <button class="badge badge-green" style="cursor:pointer;" onclick="quickPublish('${d.id}')">Publish</button>
+            ` : `<span style="font-size:0.78rem;color:var(--green-accent);">Published ✓</span>`}
+          </td>
+        </tr>
+      `).join('')}</tbody>
+    </table>`;
+  }
+
+  function openNewDrawModal() {
+    document.getElementById('draw-title').value = `${new Date().toLocaleString('en',{month:'long'})} ${new Date().getFullYear()} Draw`;
+    document.getElementById('draw-month').value = new Date().getMonth() + 1;
+    document.getElementById('draw-year').value = new Date().getFullYear();
+    document.getElementById('modal-draw').classList.add('open');
+  }
+
+  async function createDraw() {
+    const title = document.getElementById('draw-title').value;
+    const month = parseInt(document.getElementById('draw-month').value);
+    const year = parseInt(document.getElementById('draw-year').value);
+    const drawType = document.getElementById('draw-type').value;
+    const err = document.getElementById('draw-error');
+    if (!title) { err.textContent = 'Title required.'; err.classList.remove('hidden'); return; }
+    err.classList.add('hidden');
+    try {
+      await api('/api/admin/draws', { method: 'POST', body: JSON.stringify({ title, month, year, drawType }) });
+      showToast('Draw created!', 'success');
+      closeModal('modal-draw');
+      const draws = await api('/api/admin/draws');
+      allDraws = draws; renderDrawsTable(draws);
+    } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+  }
+
+  function openSimulateModal(id, title) {
+    currentSimDrawId = id;
+    document.getElementById('sim-draw-title').textContent = title;
+    document.getElementById('sim-balls').innerHTML = '';
+    document.getElementById('sim-stats').style.display = 'none';
+    document.getElementById('modal-simulate').classList.add('open');
+    runSimulation();
+  }
+
+  async function runSimulation() {
+    const ballsEl = document.getElementById('sim-balls');
+    const statsEl = document.getElementById('sim-stats');
+    ballsEl.innerHTML = '';
+    statsEl.style.display = 'none';
+    try {
+      const data = await api(`/api/admin/draws/${currentSimDrawId}/simulate`, { method: 'POST' });
+      data.simulatedNumbers.forEach((n, i) => {
+        const b = document.createElement('div');
+        b.className = 'sim-ball';
+        b.textContent = n;
+        ballsEl.appendChild(b);
+        setTimeout(() => b.classList.add('show'), i * 200);
+      });
+      statsEl.style.display = 'grid';
+      statsEl.innerHTML = `
+        <div class="sim-stat"><div class="sim-stat-n" style="color:var(--gold);">${data.results[5]||0}</div><div class="sim-stat-l">5-Match Winners</div></div>
+        <div class="sim-stat"><div class="sim-stat-n">${data.results[4]||0}</div><div class="sim-stat-l">4-Match Winners</div></div>
+        <div class="sim-stat"><div class="sim-stat-n">${data.results[3]||0}</div><div class="sim-stat-l">3-Match Winners</div></div>
+      `;
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function publishDraw() {
+    if (!confirm('Publish this draw? This will generate the official winning numbers.')) return;
+    try {
+      await api(`/api/admin/draws/${currentSimDrawId}/publish`, { method: 'POST' });
+      showToast('Draw published!', 'success');
+      closeModal('modal-simulate');
+      const draws = await api('/api/admin/draws');
+      allDraws = draws; renderDrawsTable(draws);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function quickPublish(id) {
+    if (!confirm('Publish this draw now with random winning numbers?')) return;
+    try {
+      await api(`/api/admin/draws/${id}/publish`, { method: 'POST' });
+      showToast('Draw published!', 'success');
+      const draws = await api('/api/admin/draws');
+      allDraws = draws; renderDrawsTable(draws);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  // ── Charities ──
+  function renderCharitiesGrid(charities) {
+    const grid = document.getElementById('charities-grid');
+    grid.innerHTML = charities.map(c => `
+      <div class="gg-card" style="padding:24px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+          <div style="font-size:1.8rem;">${c.icon}</div>
+          ${c.featured ? '<span class="badge badge-gold">Featured</span>' : ''}
+        </div>
+        <div style="font-family:'Playfair Display',serif;font-size:1rem;font-weight:700;color:var(--white);margin-bottom:6px;">${c.name}</div>
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:12px;">${c.description.slice(0,80)}…</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:12px;border-top:1px solid var(--border);">
+          <div style="font-family:'Playfair Display',serif;font-size:1rem;font-weight:700;color:var(--green-accent);">£${c.total_raised.toFixed(0)}</div>
+          <button class="badge badge-red" style="cursor:pointer;" onclick="deleteCharity('${c.id}')">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function openNewCharityModal() { document.getElementById('modal-charity').classList.add('open'); }
+
+  async function saveCharity() {
+    const name = document.getElementById('ch-name').value;
+    const description = document.getElementById('ch-desc').value;
+    const category = document.getElementById('ch-cat').value;
+    const icon = document.getElementById('ch-icon').value || '🌿';
+    const featured = document.getElementById('ch-featured').checked;
+    if (!name || !description || !category) { showToast('Fill all required fields', 'error'); return; }
+    try {
+      await api('/api/admin/charities', { method: 'POST', body: JSON.stringify({ name, description, category, icon, featured }) });
+      showToast('Charity added!', 'success');
+      closeModal('modal-charity');
+      const c = await api('/api/charities');
+      allCharities = c; renderCharitiesGrid(c);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function deleteCharity(id) {
+    if (!confirm('Delete this charity?')) return;
+    try {
+      await api(`/api/admin/charities/${id}`, { method: 'DELETE' });
+      showToast('Charity deleted', 'success');
+      const c = await api('/api/charities');
+      allCharities = c; renderCharitiesGrid(c);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  // ── Winners ──
+  function renderWinnersTable(winners) {
+    const wrap = document.getElementById('winners-table-wrap');
+    if (!winners.length) { wrap.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">No winners yet.</div>'; return; }
+    wrap.innerHTML = `<table class="admin-table">
+      <thead><tr><th>Winner</th><th>Draw</th><th>Tier</th><th>Amount</th><th>Verified</th><th>Pay Status</th><th>Actions</th></tr></thead>
+      <tbody>${winners.map(w=>`
+        <tr>
+          <td><div style="color:var(--white);font-weight:500;">${w.name}</div><div style="font-size:0.72rem;color:var(--text-muted);">${w.email}</div></td>
+          <td style="font-size:0.8rem;">${w.title}</td>
+          <td><span class="badge badge-gold">${w.prize_tier}</span></td>
+          <td style="color:var(--gold);font-weight:600;">£${w.amount.toFixed(2)}</td>
+          <td>${w.verified ? '<span class="badge badge-green">✓ Yes</span>' : '<span class="badge badge-grey">Pending</span>'}</td>
+          <td><span class="badge ${w.pay_status==='paid'?'badge-green':w.pay_status==='verified'?'badge-gold':'badge-grey'}">${w.pay_status}</span></td>
+          <td style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${!w.verified ? `<button class="badge badge-gold" style="cursor:pointer;" onclick="verifyWinner('${w.id}')">Verify</button>` : ''}
+            ${w.pay_status !== 'paid' ? `<button class="badge badge-green" style="cursor:pointer;" onclick="markPaid('${w.id}')">Mark Paid</button>` : ''}
+          </td>
+        </tr>
+      `).join('')}</tbody>
+    </table>`;
+  }
+
+  async function verifyWinner(id) {
+    try {
+      await api(`/api/admin/winners/${id}/verify`, { method: 'PATCH' });
+      showToast('Winner verified!', 'success');
+      const winners = await api('/api/admin/winners');
+      renderWinnersTable(winners);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  async function markPaid(id) {
+    try {
+      await api(`/api/admin/winners/${id}/pay`, { method: 'PATCH' });
+      showToast('Marked as paid!', 'success');
+      const winners = await api('/api/admin/winners');
+      renderWinnersTable(winners);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  // ── Navigation ──
+  const panelMap = {
+    analytics: ['Analytics', 'Platform overview & KPIs'],
+    users: ['Users', 'Manage subscribers & accounts'],
+    draws: ['Prize Draws', 'Configure, simulate & publish draws'],
+    charities: ['Charities', 'Manage charitable organisations'],
+    winners: ['Winners', 'Verify submissions & manage payouts'],
+  };
+
+  function showAdminPanel(name) {
+    document.querySelectorAll('.apanel').forEach(p=>p.classList.remove('active'));
+    document.querySelectorAll('.admin-link').forEach(l=>l.classList.remove('active'));
+    document.getElementById(`apanel-${name}`).classList.add('active');
+    document.querySelector(`[onclick="showAdminPanel('${name}')"]`).classList.add('active');
+    const [title, sub] = panelMap[name] || ['Admin', ''];
+    document.getElementById('adm-panel-title').textContent = title;
+    document.getElementById('adm-panel-sub').textContent = sub;
+  }
+
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  function logout() {
+    localStorage.removeItem('gg_token'); localStorage.removeItem('gg_user');
+    window.location.href = '/login';
+  }
+
+  function showToast(msg, type='success') {
+    const c = document.getElementById('gg-toast');
+    const t = document.createElement('div');
+    t.className = `toast ${type}`;
+    t.innerHTML = `<span class="toast-icon">${type==='success'?'✓':'✕'}</span><span>${msg}</span>`;
+    c.appendChild(t); setTimeout(()=>t.remove(),3500);
+  }
+
+  loadAll();
+</script>
+</body>
+</html>
