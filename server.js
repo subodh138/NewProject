@@ -1,7 +1,7 @@
-require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const authRoutes    = require('./routes/authRoutes');
 const userRoutes    = require('./routes/userRoutes');
@@ -12,6 +12,7 @@ const adminRoutes   = require('./routes/adminRoutes');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '127.0.0.1';
 
 // ── Middleware ──
 app.use(cors());
@@ -43,9 +44,11 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error.' });
 });
 
-app.listen(PORT, () => {
-  console.log(`\n🟢 GreenGive server running → http://localhost:${PORT}`);
-  console.log(`   API health → http://localhost:${PORT}/api/health\n`);
-});
+if (require.main === module) {
+  app.listen(PORT, HOST, () => {
+    console.log(`GreenGive server running at http://${HOST}:${PORT}`);
+    console.log(`API health: http://${HOST}:${PORT}/api/health`);
+  });
+}
 
 module.exports = app;

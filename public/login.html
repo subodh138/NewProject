@@ -188,6 +188,9 @@
   <!-- RIGHT -->
   <div class="login-right">
     <div class="login-box">
+      <div style="margin-bottom:20px;">
+        <a href="/" style="color:var(--text-muted);text-decoration:none;font-size:0.82rem;">← Back to home</a>
+      </div>
       <!-- Tabs: subscriber / admin -->
       <div class="login-tabs">
         <button class="tab-btn active" id="tab-user" onclick="switchTab('user')">Subscriber</button>
@@ -254,11 +257,12 @@
 <div id="gg-toast"></div>
 
 <script>
-  // Check if already logged in
-  const token = localStorage.getItem('gg_token');
-  const user = JSON.parse(localStorage.getItem('gg_user') || 'null');
-  if (token && user) {
-    window.location.href = user.role === 'admin' ? '/admin' : '/dashboard';
+  localStorage.removeItem('gg_token');
+  localStorage.removeItem('gg_user');
+
+  function saveSession(token, user) {
+    sessionStorage.setItem('gg_token', token);
+    sessionStorage.setItem('gg_user', JSON.stringify(user));
   }
 
   function switchTab(tab) {
@@ -285,8 +289,7 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Login failed');
-      localStorage.setItem('gg_token', data.token);
-      localStorage.setItem('gg_user', JSON.stringify(data.user));
+      saveSession(data.token, data.user);
       showToast('Welcome back, ' + data.user.name + '!', 'success');
       setTimeout(() => { window.location.href = '/dashboard'; }, 600);
     } catch (err2) {
@@ -312,8 +315,7 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Authentication failed');
-      localStorage.setItem('gg_token', data.token);
-      localStorage.setItem('gg_user', JSON.stringify(data.user));
+      saveSession(data.token, data.user);
       showToast('Admin access granted', 'success');
       setTimeout(() => { window.location.href = '/admin'; }, 600);
     } catch (err2) {

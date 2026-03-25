@@ -309,28 +309,49 @@
 </div>
 
 <div id="gg-toast"></div>
+<input type="file" id="proofUploader" class="hidden" accept="image/*" onchange="handleProofUpload(event)">
 
 <script>
-  const token = localStorage.getItem('gg_token');
-  const user = JSON.parse(localStorage.getItem('gg_user') || 'null');
+  localStorage.removeItem('gg_token');
+  localStorage.removeItem('gg_user');
+
+  const token = sessionStorage.getItem('gg_token');
+  const user = JSON.parse(sessionStorage.getItem('gg_user') || 'null');
   if (!token || !user || user.role === 'admin') {
     window.location.href = '/login';
   }
 
   let dashData = null;
+  let publishedDraws = [];
   let selectedNewCharity = null;
+  let pendingProofWinId = null;
+
+  function clearSessionAndRedirect() {
+    sessionStorage.removeItem('gg_token');
+    sessionStorage.removeItem('gg_user');
+    localStorage.removeItem('gg_token');
+    localStorage.removeItem('gg_user');
+    window.location.href = '/login';
+  }
 
   // ── Load dashboard data ──
-  async function loadDashboard() {
+  async function loadDashboard(preserveActivePanel = false) {
     try {
+      const activePanel = preserveActivePanel
+        ? document.querySelector('.panel.active')?.id?.replace('panel-', '') || 'overview'
+        : 'overview';
       const [dashRes, drawsRes] = await Promise.all([
         fetch('/api/user/dashboard', { headers: { Authorization: `Bearer ${token}` } }),
         fetch('/api/draws'),
       ]);
+      if (!dashRes.ok) {
+        throw new Error('Session expired');
+      }
       dashData = await dashRes.json();
-      const allDraws = await drawsRes.json();
+      publishedDraws = await drawsRes.json();
 
       document.getElementById('dash-loading').style.display = 'none';
+      document.getElementById('newScoreDate').valueAsDate = new Date();
 
       // Sidebar
       document.getElementById('sb-name').textContent = dashData.user.name;
@@ -342,22 +363,26 @@
         : '<span class="badge badge-red">● Inactive</span>';
       document.getElementById('sb-status-badge').innerHTML = statusBadge;
 
-      renderOverview(dashData, allDraws);
+      renderOverview(dashData);
       renderScores(dashData.scores);
-      renderDraws(dashData.latestDraw, allDraws);
+      renderDraws(dashData.latestDraw, publishedDraws, dashData.latestEntry);
       renderCharity(dashData);
       renderSubscription(dashData.user);
       renderWinnings(dashData.wins, dashData.totalWon);
 
-      showPanel('overview');
+      showPanel(activePanel);
     } catch (e) {
       console.error(e);
+      if (e.message === 'Session expired') {
+        clearSessionAndRedirect();
+        return;
+      }
       showToast('Failed to load dashboard', 'error');
     }
   }
 
   // ── Overview ──
-  function renderOverview(data, allDraws) {
+  function renderOverview(data) {
     document.getElementById('ov-sub-status').textContent = data.user.sub_status === 'active' ? 'Active' : 'Inactive';
     document.getElementById('ov-sub-date').textContent = data.user.sub_end ? `Renews ${new Date(data.user.sub_end).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'})}` : 'Not subscribed';
     document.getElementById('ov-draws').textContent = data.drawsEntered;
@@ -385,8 +410,17 @@
 
     // Latest draw
     const dl = document.getElementById('ov-draw-info');
-    const latest = allDraws[0];
+    const latest = data.latestDraw;
     if (!latest) { dl.innerHTML = '<div style="color:var(--text-muted);">No draws yet.</div>'; return; }
+    if (latest.status === 'pending') {
+      dl.innerHTML = `
+        <div class="mono" style="font-size:0.65rem;letter-spacing:0.12em;color:var(--text-muted);margin-bottom:8px;">CURRENT DRAW · ${latest.title}</div>
+        <div style="font-size:0.95rem;color:var(--white);margin-bottom:8px;">Entry window is open</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);line-height:1.7;">Your saved rolling-5 scores will be locked in when you enter. Winning numbers appear after the admin publishes results.</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:12px;">Pool: <span style="color:var(--gold);">£${latest.total_pool}</span></div>
+      `;
+      return;
+    }
     const nums = JSON.parse(latest.winning_numbers || '[]');
     dl.innerHTML = `
       <div class="mono" style="font-size:0.65rem;letter-spacing:0.12em;color:var(--text-muted);margin-bottom:8px;">WINNING NUMBERS · ${latest.title}</div>
@@ -412,12 +446,12 @@
             <div class="score-date">Played: ${new Date(s.played_date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}</div>
           </div>
         </div>
-        <button class="score-delete" onclick="deleteScore('${s.id}')" title="Delete">✕</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="badge badge-grey" style="cursor:pointer;border:none;" onclick="editScore('${s.id}', ${s.score}, '${s.played_date}')">Edit</button>
+          <button class="score-delete" onclick="deleteScore('${s.id}')" title="Delete">✕</button>
+        </div>
       </div>
     `).join('');
-
-    // Set default date to today
-    document.getElementById('newScoreDate').valueAsDate = new Date();
   }
 
   async function addScore() {
@@ -440,7 +474,7 @@
       if (!res.ok) throw new Error(data.errors?.[0]?.msg || data.error || 'Failed');
       renderScores(data.scores);
       dashData.scores = data.scores;
-      renderOverview(dashData, []);
+      renderOverview(dashData);
       document.getElementById('newScore').value = '';
       showToast('Score added!', 'success');
     } catch (e) {
@@ -448,34 +482,69 @@
     } finally { btn.disabled = false; btn.textContent = 'Add Score'; }
   }
 
+  async function editScore(id, score, playedDate) {
+    const nextScore = prompt('Update score (1-45)', score);
+    if (nextScore === null) return;
+    const nextDate = prompt('Update played date (YYYY-MM-DD)', playedDate.slice(0, 10));
+    if (nextDate === null) return;
+
+    try {
+      const res = await fetch(`/api/scores/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ score: parseInt(nextScore, 10), playedDate: nextDate }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.errors?.[0]?.msg || data.error || 'Failed');
+      dashData.scores = data.scores;
+      renderScores(dashData.scores);
+      renderOverview(dashData);
+      showToast('Score updated!', 'success');
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  }
+
   async function deleteScore(id) {
     if (!confirm('Delete this score?')) return;
     try {
       const res = await fetch(`/api/scores/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error('Failed');
-      const resDash = await fetch('/api/user/dashboard', { headers: { Authorization: `Bearer ${token}` } });
-      dashData = await resDash.json();
-      renderScores(dashData.scores);
+      await loadDashboard(true);
       showToast('Score deleted', 'success');
     } catch { showToast('Delete failed', 'error'); }
   }
 
   // ── Draws ──
-  function renderDraws(latest, allDraws) {
+  function renderDraws(latest, allDraws, latestEntry) {
     const card = document.getElementById('latest-draw-card');
-    if (!latest) { card.innerHTML = '<div style="color:var(--text-muted);">No published draws yet.</div>'; return; }
+    if (!latest) { card.innerHTML = '<div style="color:var(--text-muted);">No draws available yet.</div>'; return; }
+    const isPublished = latest.status === 'published';
     const nums = JSON.parse(latest.winning_numbers || '[]');
+    const alreadyEntered = Boolean(latestEntry);
+    const actionDisabled = alreadyEntered || isPublished;
+    const actionLabel = alreadyEntered
+      ? (isPublished ? 'Result Recorded' : 'Entered')
+      : (isPublished ? 'Closed' : 'Enter This Draw');
     card.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
         <div>
-          <div class="mono" style="font-size:0.62rem;letter-spacing:0.14em;color:var(--green-accent);margin-bottom:8px;">LATEST DRAW</div>
+          <div class="mono" style="font-size:0.62rem;letter-spacing:0.14em;color:${isPublished ? 'var(--gold)' : 'var(--green-accent)'};margin-bottom:8px;">${isPublished ? 'LATEST RESULTS' : 'CURRENT DRAW'}</div>
           <div style="font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:900;color:var(--white);">${latest.title}</div>
           <div style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;">Prize pool: <span style="color:var(--gold);">£${latest.total_pool}</span></div>
+          ${latest.jackpot_carried ? `<div style="font-size:0.76rem;color:var(--gold);margin-top:6px;">Jackpot rollover included: £${Number(latest.jackpot_carried).toFixed(2)}</div>` : ''}
+          ${alreadyEntered ? `<div style="font-size:0.76rem;color:var(--green-accent);margin-top:6px;">You are entered in this draw.</div>` : ''}
         </div>
-        <button class="btn-primary" onclick="enterDraw('${latest.id}')">Enter This Draw</button>
+        <button class="btn-primary" ${actionDisabled ? 'disabled' : ''} onclick="enterDraw('${latest.id}')">${actionLabel}</button>
       </div>
-      <div class="mono" style="font-size:0.62rem;letter-spacing:0.12em;color:var(--text-muted);margin-top:20px;margin-bottom:10px;">WINNING NUMBERS</div>
-      <div class="draw-nums">${nums.map(n=>`<div class="draw-num">${n}</div>`).join('')}</div>
+      ${isPublished ? `
+        <div class="mono" style="font-size:0.62rem;letter-spacing:0.12em;color:var(--text-muted);margin-top:20px;margin-bottom:10px;">WINNING NUMBERS</div>
+        <div class="draw-nums">${nums.map(n=>`<div class="draw-num">${n}</div>`).join('')}</div>
+      ` : `
+        <div style="margin-top:18px;padding:16px;border:1px solid var(--border);border-radius:10px;background:rgba(46,204,113,0.04);font-size:0.84rem;color:var(--cream-dim);line-height:1.7;">
+          Enter now to lock your current rolling 5 Stableford scores into this month's draw. Results appear after the admin publishes the winning numbers.
+        </div>
+      `}
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
         <div><div class="mono" style="font-size:0.6rem;color:var(--text-muted);">5-MATCH</div><div style="font-size:0.85rem;color:var(--gold);font-weight:600;">40% pool</div></div>
         <div><div class="mono" style="font-size:0.6rem;color:var(--text-muted);">4-MATCH</div><div style="font-size:0.85rem;color:var(--white);font-weight:600;">35% pool</div></div>
@@ -484,7 +553,10 @@
     `;
 
     const pastList = document.getElementById('past-draws-list');
-    if (!allDraws.length) return;
+    if (!allDraws.length) {
+      pastList.innerHTML = '<div style="color:var(--text-muted);font-size:0.875rem;">No published results yet.</div>';
+      return;
+    }
     pastList.innerHTML = `<table>
       <thead><tr><th>Draw</th><th>Month</th><th>Pool</th><th>Status</th></tr></thead>
       <tbody>${allDraws.map(d=>`
@@ -503,11 +575,14 @@
       const res = await fetch(`/api/draws/${drawId}/enter`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      if (data.prizeTier) {
-        showToast(`🎉 You matched ${data.matched}! Prize tier: ${data.prizeTier}`, 'success');
+      if (data.status === 'queued') {
+        showToast('Draw entry saved. We will show your result after publish.', 'success');
+      } else if (data.prizeTier) {
+        showToast(`You matched ${data.matched}. Prize tier: ${data.prizeTier}`, 'success');
       } else {
-        showToast(`Entered! You matched ${data.matched} numbers.`, 'success');
+        showToast(`Result checked. You matched ${data.matched} numbers.`, 'success');
       }
+      await loadDashboard(true);
     } catch (e) { showToast(e.message, 'error'); }
   }
 
@@ -568,10 +643,7 @@
       });
       if (!res.ok) throw new Error('Failed');
       showToast('Charity updated!', 'success');
-      const dashRes = await fetch('/api/user/dashboard', { headers: { Authorization: `Bearer ${token}` } });
-      dashData = await dashRes.json();
-      renderCharity(dashData);
-      renderOverview(dashData, []);
+      await loadDashboard(true);
     } catch { showToast('Update failed', 'error'); }
   }
 
@@ -609,9 +681,7 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       showToast(`Switched to ${plan} plan!`, 'success');
-      const dashRes = await fetch('/api/user/dashboard', { headers: { Authorization: `Bearer ${token}` } });
-      dashData = await dashRes.json();
-      renderSubscription(dashData.user);
+      await loadDashboard(true);
     } catch (e) { showToast(e.message, 'error'); }
   }
 
@@ -621,9 +691,7 @@
       const res = await fetch('/api/user/cancel', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new Error('Failed');
       showToast('Subscription cancelled.', 'success');
-      const dashRes = await fetch('/api/user/dashboard', { headers: { Authorization: `Bearer ${token}` } });
-      dashData = await dashRes.json();
-      renderSubscription(dashData.user);
+      await loadDashboard(true);
     } catch (e) { showToast(e.message, 'error'); }
   }
 
@@ -638,17 +706,78 @@
       wt.innerHTML = '<div style="color:var(--text-muted);font-size:0.875rem;">No winnings yet. Keep entering draws!</div>';
       return;
     }
+
+    const proofBadge = (win) => {
+      const map = {
+        required: ['badge-red', 'Proof needed'],
+        submitted: ['badge-gold', 'Submitted'],
+        approved: ['badge-green', 'Approved'],
+        rejected: ['badge-red', 'Rejected'],
+        not_required: ['badge-grey', 'Not required'],
+      };
+      const [klass, label] = map[win.proof_status] || ['badge-grey', win.proof_status || 'Pending'];
+      return `<span class="badge ${klass}">${label}</span>`;
+    };
+
     wt.innerHTML = `<table>
-      <thead><tr><th>Draw</th><th>Tier</th><th>Amount</th><th>Status</th></tr></thead>
+      <thead><tr><th>Draw</th><th>Tier</th><th>Amount</th><th>Proof</th><th>Payment</th><th>Action</th></tr></thead>
       <tbody>${wins.map(w=>`
         <tr>
           <td style="color:var(--white);">${w.title}</td>
           <td><span class="badge badge-gold">${w.prize_tier}</span></td>
           <td style="color:var(--gold);font-weight:600;">£${w.amount.toFixed(2)}</td>
-          <td><span class="badge ${w.pay_status==='paid'?'badge-green':'badge-grey'}">${w.pay_status}</span></td>
+          <td>
+            ${proofBadge(w)}
+            ${w.proof_note ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;">${w.proof_note}</div>` : ''}
+          </td>
+          <td><span class="badge ${w.pay_status==='paid'?'badge-green':w.pay_status==='verified'?'badge-gold':'badge-grey'}">${w.pay_status}</span></td>
+          <td style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${w.proof_url ? `<button class="badge badge-grey" style="cursor:pointer;border:none;" onclick="window.open('${w.proof_url}', '_blank')">View Proof</button>` : ''}
+            ${(w.proof_status === 'required' || w.proof_status === 'rejected') && w.pay_status !== 'paid'
+              ? `<button class="badge badge-green" style="cursor:pointer;border:none;" onclick="uploadProof('${w.id}')">Upload Proof</button>`
+              : ''}
+          </td>
         </tr>
       `).join('')}</tbody>
     </table>`;
+  }
+
+  function uploadProof(winId) {
+    pendingProofWinId = winId;
+    const input = document.getElementById('proofUploader');
+    input.value = '';
+    input.click();
+  }
+
+  async function handleProofUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file || !pendingProofWinId) return;
+    if (file.size > 1_500_000) {
+      showToast('Please upload an image smaller than 1.5MB.', 'error');
+      return;
+    }
+
+    const proofImage = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    try {
+      const res = await fetch(`/api/user/winnings/${pendingProofWinId}/proof`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ proofImage }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.errors?.[0]?.msg || data.error || 'Upload failed');
+      showToast('Proof uploaded for review.', 'success');
+      pendingProofWinId = null;
+      await loadDashboard(true);
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
   }
 
   // ── Panel navigation ──
@@ -665,8 +794,7 @@
   }
 
   function logout() {
-    localStorage.removeItem('gg_token'); localStorage.removeItem('gg_user');
-    window.location.href = '/login';
+    clearSessionAndRedirect();
   }
 
   function showToast(msg, type='success') {

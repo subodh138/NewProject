@@ -1,5 +1,4 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { body, validationResult } = require('express-validator');
 const { getDb } = require('../db/database');
@@ -16,7 +15,15 @@ router.get('/dashboard', authenticate, (req, res) => {
   const totalWon = wins.reduce((s, w) => s + (w.amount || 0), 0);
   const drawsEntered = db.prepare('SELECT COUNT(*) as c FROM draw_entries WHERE user_id = ?').get(req.user.id);
   const charity = user.charity_id ? db.prepare('SELECT * FROM charities WHERE id = ?').get(user.charity_id) : null;
-  const latestDraw = db.prepare('SELECT * FROM draws WHERE status = ? ORDER BY year DESC, month DESC LIMIT 1').get('published');
+  const latestDraw = db.prepare(`
+    SELECT * FROM draws
+    WHERE status IN ('pending', 'published')
+    ORDER BY year DESC, month DESC, created_at DESC
+    LIMIT 1
+  `).get();
+  const latestEntry = latestDraw
+    ? db.prepare('SELECT * FROM draw_entries WHERE draw_id = ? AND user_id = ?').get(latestDraw.id, req.user.id)
+    : null;
 
   res.json({
     user,
@@ -26,6 +33,7 @@ router.get('/dashboard', authenticate, (req, res) => {
     drawsEntered: drawsEntered.c,
     charity,
     latestDraw,
+    latestEntry,
   });
 });
 
@@ -80,6 +88,52 @@ router.post('/cancel', authenticate, (req, res) => {
   const db = getDb();
   db.prepare("UPDATE users SET sub_status = 'cancelled' WHERE id = ?").run(req.user.id);
   res.json({ message: 'Subscription cancelled' });
+});
+
+// POST /api/user/winnings/:id/proof
+router.post('/winnings/:id/proof', authenticate, [
+  body('proofImage')
+    .isString()
+    .withMessage('Proof image is required'),
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const { proofImage } = req.body;
+  if (!proofImage.startsWith('data:image/')) {
+    return res.status(400).json({ error: 'Proof must be an image upload.' });
+  }
+  if (proofImage.length > 2_500_000) {
+    return res.status(400).json({ error: 'Proof image is too large. Please upload a smaller screenshot.' });
+  }
+
+  const db = getDb();
+  const win = db.prepare(`
+    SELECT id, prize_tier, pay_status
+    FROM draw_entries
+    WHERE id = ? AND user_id = ?
+  `).get(req.params.id, req.user.id);
+
+  if (!win || !win.prize_tier) return res.status(404).json({ error: 'Winning entry not found.' });
+  if (win.pay_status === 'paid') return res.status(400).json({ error: 'Payment has already been completed for this win.' });
+
+  db.prepare(`
+    UPDATE draw_entries
+    SET proof_url = ?,
+        proof_status = 'submitted',
+        proof_submitted_at = datetime('now'),
+        proof_note = NULL
+    WHERE id = ?
+  `).run(proofImage, req.params.id);
+
+  const updatedWin = db.prepare(`
+    SELECT de.*, d.title, d.month, d.year
+    FROM draw_entries de
+    JOIN draws d ON d.id = de.draw_id
+    WHERE de.id = ?
+  `).get(req.params.id);
+
+  res.json({ message: 'Proof uploaded successfully.', win: updatedWin });
 });
 
 module.exports = router;

@@ -50,6 +50,9 @@ router.post('/login', [
 
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
+  if (user.role === 'admin') {
+    return res.status(403).json({ error: 'Admin accounts must use the Admin sign-in tab.' });
+  }
 
   const valid = bcrypt.compareSync(password, user.password);
   if (!valid) return res.status(401).json({ error: 'Invalid email or password.' });

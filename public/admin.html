@@ -240,11 +240,9 @@
     <div class="form-group"><label class="form-label">Draw Title</label><input type="text" class="form-input" id="draw-title" placeholder="March 2025 Draw"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div class="form-group"><label class="form-label">Month</label>
-        <select class="form-input" id="draw-month">
-          ${Array.from({length:12},(_,i)=>`<option value="${i+1}">${new Date(0,i).toLocaleString('en',{month:'long'})}</option>`).join('')}
-        </select>
+        <select class="form-input" id="draw-month"></select>
       </div>
-      <div class="form-group"><label class="form-label">Year</label><input type="number" class="form-input" id="draw-year" value="${new Date().getFullYear()}" min="2024"></div>
+      <div class="form-group"><label class="form-label">Year</label><input type="number" class="form-input" id="draw-year" min="2024"></div>
     </div>
     <div class="form-group"><label class="form-label">Draw Type</label>
       <select class="form-input" id="draw-type">
@@ -311,8 +309,11 @@
 <div id="gg-toast"></div>
 
 <script>
-  const token = localStorage.getItem('gg_token');
-  const adminUser = JSON.parse(localStorage.getItem('gg_user') || 'null');
+  localStorage.removeItem('gg_token');
+  localStorage.removeItem('gg_user');
+
+  const token = sessionStorage.getItem('gg_token');
+  const adminUser = JSON.parse(sessionStorage.getItem('gg_user') || 'null');
   if (!token || !adminUser || adminUser.role !== 'admin') {
     window.location.href = '/login';
   }
@@ -322,10 +323,48 @@
   let currentSimDrawId = null;
   let allUsers = [], allDraws = [], allCharities = [];
 
+  function clearSessionAndRedirect() {
+    sessionStorage.removeItem('gg_token');
+    sessionStorage.removeItem('gg_user');
+    localStorage.removeItem('gg_token');
+    localStorage.removeItem('gg_user');
+    window.location.href = '/login';
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function ensureDrawModalDefaults() {
+    const monthSelect = document.getElementById('draw-month');
+    const yearInput = document.getElementById('draw-year');
+
+    if (!monthSelect.dataset.ready) {
+      monthSelect.innerHTML = Array.from({ length: 12 }, (_, index) => {
+        const monthName = new Date(2000, index, 1).toLocaleString('en', { month: 'long' });
+        return `<option value="${index + 1}">${monthName}</option>`;
+      }).join('');
+      monthSelect.dataset.ready = 'true';
+    }
+
+    if (!yearInput.value) {
+      yearInput.value = new Date().getFullYear();
+    }
+  }
+
   async function api(path, options = {}) {
     const res = await fetch(path, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...options.headers }, ...options });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Request failed');
+    if (res.status === 401 || res.status === 403) {
+      clearSessionAndRedirect();
+      throw new Error('Session expired');
+    }
+    if (!res.ok) throw new Error(data.error || data.errors?.[0]?.msg || 'Request failed');
     return data;
   }
 
@@ -472,23 +511,36 @@
       <thead><tr><th>Title</th><th>Month/Year</th><th>Type</th><th>Pool</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>${draws.map(d=>`
         <tr>
-          <td style="color:var(--white);font-weight:500;">${d.title}</td>
-          <td class="mono" style="font-size:0.78rem;">${d.month}/${d.year}</td>
-          <td><span class="badge badge-grey">${d.draw_type}</span></td>
+          <td style="color:var(--white);font-weight:500;">${escapeHtml(d.title)}</td>
+          <td class="mono" style="font-size:0.78rem;">${escapeHtml(`${d.month}/${d.year}`)}</td>
+          <td><span class="badge badge-grey">${escapeHtml(d.draw_type)}</span></td>
           <td style="color:var(--gold);">£${d.total_pool}</td>
           <td><span class="badge ${d.status==='published'?'badge-green':d.status==='pending'?'badge-grey':'badge-gold'}">${d.status}</span></td>
           <td style="display:flex;gap:8px;flex-wrap:wrap;">
             ${d.status !== 'published' ? `
-              <button class="badge badge-grey" style="cursor:pointer;" onclick="openSimulateModal('${d.id}','${d.title}')">Simulate</button>
-              <button class="badge badge-green" style="cursor:pointer;" onclick="quickPublish('${d.id}')">Publish</button>
+              <button class="badge badge-grey draw-sim-btn" style="cursor:pointer;border:none;" data-draw-id="${d.id}" data-draw-title="${encodeURIComponent(d.title)}">Simulate</button>
+              <button class="badge badge-green draw-publish-btn" style="cursor:pointer;border:none;" data-draw-id="${d.id}">Publish</button>
             ` : `<span style="font-size:0.78rem;color:var(--green-accent);">Published ✓</span>`}
           </td>
         </tr>
       `).join('')}</tbody>
     </table>`;
+
+    wrap.querySelectorAll('.draw-sim-btn').forEach((button) => {
+      button.addEventListener('click', () => {
+        openSimulateModal(button.dataset.drawId, decodeURIComponent(button.dataset.drawTitle));
+      });
+    });
+
+    wrap.querySelectorAll('.draw-publish-btn').forEach((button) => {
+      button.addEventListener('click', () => {
+        quickPublish(button.dataset.drawId);
+      });
+    });
   }
 
   function openNewDrawModal() {
+    ensureDrawModalDefaults();
     document.getElementById('draw-title').value = `${new Date().toLocaleString('en',{month:'long'})} ${new Date().getFullYear()} Draw`;
     document.getElementById('draw-month').value = new Date().getMonth() + 1;
     document.getElementById('draw-year').value = new Date().getFullYear();
@@ -502,6 +554,8 @@
     const drawType = document.getElementById('draw-type').value;
     const err = document.getElementById('draw-error');
     if (!title) { err.textContent = 'Title required.'; err.classList.remove('hidden'); return; }
+    if (!Number.isInteger(month) || month < 1 || month > 12) { err.textContent = 'Please choose a valid month.'; err.classList.remove('hidden'); return; }
+    if (!Number.isInteger(year) || year < 2024) { err.textContent = 'Please enter a valid year.'; err.classList.remove('hidden'); return; }
     err.classList.add('hidden');
     try {
       await api('/api/admin/draws', { method: 'POST', body: JSON.stringify({ title, month, year, drawType }) });
@@ -616,19 +670,37 @@
   function renderWinnersTable(winners) {
     const wrap = document.getElementById('winners-table-wrap');
     if (!winners.length) { wrap.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">No winners yet.</div>'; return; }
+
+    const proofBadge = (winner) => {
+      const map = {
+        required: ['badge-red', 'Proof needed'],
+        submitted: ['badge-gold', 'Submitted'],
+        approved: ['badge-green', 'Approved'],
+        rejected: ['badge-red', 'Rejected'],
+      };
+      const [klass, label] = map[winner.proof_status] || ['badge-grey', winner.proof_status || 'Pending'];
+      return `<span class="badge ${klass}">${label}</span>`;
+    };
+
     wrap.innerHTML = `<table class="admin-table">
-      <thead><tr><th>Winner</th><th>Draw</th><th>Tier</th><th>Amount</th><th>Verified</th><th>Pay Status</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Winner</th><th>Draw</th><th>Tier</th><th>Amount</th><th>Proof</th><th>Verified</th><th>Pay Status</th><th>Actions</th></tr></thead>
       <tbody>${winners.map(w=>`
         <tr>
           <td><div style="color:var(--white);font-weight:500;">${w.name}</div><div style="font-size:0.72rem;color:var(--text-muted);">${w.email}</div></td>
           <td style="font-size:0.8rem;">${w.title}</td>
           <td><span class="badge badge-gold">${w.prize_tier}</span></td>
           <td style="color:var(--gold);font-weight:600;">£${w.amount.toFixed(2)}</td>
+          <td>
+            ${proofBadge(w)}
+            ${w.proof_note ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:6px;max-width:180px;">${w.proof_note}</div>` : ''}
+          </td>
           <td>${w.verified ? '<span class="badge badge-green">✓ Yes</span>' : '<span class="badge badge-grey">Pending</span>'}</td>
           <td><span class="badge ${w.pay_status==='paid'?'badge-green':w.pay_status==='verified'?'badge-gold':'badge-grey'}">${w.pay_status}</span></td>
           <td style="display:flex;gap:8px;flex-wrap:wrap;">
-            ${!w.verified ? `<button class="badge badge-gold" style="cursor:pointer;" onclick="verifyWinner('${w.id}')">Verify</button>` : ''}
-            ${w.pay_status !== 'paid' ? `<button class="badge badge-green" style="cursor:pointer;" onclick="markPaid('${w.id}')">Mark Paid</button>` : ''}
+            ${w.proof_url ? `<button class="badge badge-grey" style="cursor:pointer;border:none;" onclick="viewProof('${w.proof_url}')">Proof</button>` : ''}
+            ${!w.verified ? `<button class="badge badge-gold" style="cursor:pointer;border:none;" onclick="verifyWinner('${w.id}')">Approve</button>` : ''}
+            ${!w.verified && w.proof_status === 'submitted' ? `<button class="badge badge-red" style="cursor:pointer;border:none;" onclick="rejectWinner('${w.id}')">Reject</button>` : ''}
+            ${w.verified && w.pay_status !== 'paid' ? `<button class="badge badge-green" style="cursor:pointer;" onclick="markPaid('${w.id}')">Mark Paid</button>` : ''}
           </td>
         </tr>
       `).join('')}</tbody>
@@ -644,6 +716,20 @@
     } catch (e) { showToast(e.message, 'error'); }
   }
 
+  async function rejectWinner(id) {
+    const note = prompt('Why are you rejecting this proof?');
+    if (!note) return;
+    try {
+      await api(`/api/admin/winners/${id}/reject`, {
+        method: 'PATCH',
+        body: JSON.stringify({ note }),
+      });
+      showToast('Proof rejected.', 'success');
+      const winners = await api('/api/admin/winners');
+      renderWinnersTable(winners);
+    } catch (e) { showToast(e.message, 'error'); }
+  }
+
   async function markPaid(id) {
     try {
       await api(`/api/admin/winners/${id}/pay`, { method: 'PATCH' });
@@ -651,6 +737,10 @@
       const winners = await api('/api/admin/winners');
       renderWinnersTable(winners);
     } catch (e) { showToast(e.message, 'error'); }
+  }
+
+  function viewProof(proofUrl) {
+    window.open(proofUrl, '_blank');
   }
 
   // ── Navigation ──
@@ -675,8 +765,7 @@
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
   function logout() {
-    localStorage.removeItem('gg_token'); localStorage.removeItem('gg_user');
-    window.location.href = '/login';
+    clearSessionAndRedirect();
   }
 
   function showToast(msg, type='success') {
@@ -687,6 +776,7 @@
     c.appendChild(t); setTimeout(()=>t.remove(),3500);
   }
 
+  ensureDrawModalDefaults();
   loadAll();
 </script>
 </body>

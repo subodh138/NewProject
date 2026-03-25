@@ -455,8 +455,10 @@
   });
 
   // Check if logged in → redirect
-  const token = localStorage.getItem('gg_token');
-  const user = JSON.parse(localStorage.getItem('gg_user') || 'null');
+  localStorage.removeItem('gg_token');
+  localStorage.removeItem('gg_user');
+  const token = sessionStorage.getItem('gg_token');
+  const user = JSON.parse(sessionStorage.getItem('gg_user') || 'null');
   if (token && user) {
     const navLinks = document.querySelector('.gg-nav-links');
     const loginLi = navLinks.querySelector('a[href="/login"]')?.parentElement;

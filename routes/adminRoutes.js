@@ -1,12 +1,24 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { body, validationResult } = require('express-validator');
 const { getDb } = require('../db/database');
+const { createWinningNumbers, settleDrawEntries } = require('../lib/drawEngine');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authenticate, requireAdmin);
+
+function getCarryForwardAmount(db) {
+  const latestPublishedDraw = db.prepare(`
+    SELECT jackpot_carried
+    FROM draws
+    WHERE status = 'published'
+    ORDER BY year DESC, month DESC, created_at DESC
+    LIMIT 1
+  `).get();
+
+  return Number(latestPublishedDraw?.jackpot_carried || 0);
+}
 
 // ── ANALYTICS ──
 router.get('/analytics', (req, res) => {
@@ -110,14 +122,15 @@ router.post('/draws', [
   const { title, month, year, drawType } = req.body;
   const db = getDb();
 
-  // Estimate prize pool from active subs
   const activeSubs = db.prepare("SELECT COUNT(*) as c FROM users WHERE sub_status = 'active'").get();
   const avgSubPrice = 9.99;
-  const totalPool = parseFloat((activeSubs.c * avgSubPrice * 0.60).toFixed(2)); // 60% goes to prize
+  const basePool = activeSubs.c * avgSubPrice * 0.60;
+  const carryForward = getCarryForwardAmount(db);
+  const totalPool = Number((basePool + carryForward).toFixed(2));
 
   const id = uuidv4();
-  db.prepare('INSERT INTO draws (id,title,month,year,draw_type,status,total_pool) VALUES (?,?,?,?,?,?,?)')
-    .run(id, title, month, year, drawType, 'pending', totalPool);
+  db.prepare('INSERT INTO draws (id,title,month,year,draw_type,status,jackpot_carried,total_pool) VALUES (?,?,?,?,?,?,?,?)')
+    .run(id, title, month, year, drawType, 'pending', carryForward, totalPool);
   res.status(201).json(db.prepare('SELECT * FROM draws WHERE id = ?').get(id));
 });
 
@@ -126,15 +139,8 @@ router.post('/draws/:id/simulate', (req, res) => {
   const draw = db.prepare('SELECT * FROM draws WHERE id = ?').get(req.params.id);
   if (!draw) return res.status(404).json({ error: 'Draw not found.' });
 
-  // Random draw: pick 5 unique numbers from 1-45
-  const nums = [];
-  while (nums.length < 5) {
-    const n = Math.floor(Math.random() * 45) + 1;
-    if (!nums.includes(n)) nums.push(n);
-  }
-
-  // Simulate matches against all active subscribers
   const subs = db.prepare("SELECT id FROM users WHERE sub_status = 'active'").all();
+  const nums = createWinningNumbers(draw, subs.length);
   const results = subs.map(u => {
     const scores = db.prepare('SELECT score FROM scores WHERE user_id = ? ORDER BY played_date DESC LIMIT 5').all(u.id);
     const userNums = scores.map(s => s.score);
@@ -157,17 +163,56 @@ router.post('/draws/:id/publish', (req, res) => {
   const db = getDb();
   const draw = db.prepare('SELECT * FROM draws WHERE id = ?').get(req.params.id);
   if (!draw) return res.status(404).json({ error: 'Draw not found.' });
+  if (draw.status === 'published') return res.status(400).json({ error: 'Draw already published.' });
 
-  const nums = [];
-  while (nums.length < 5) {
-    const n = Math.floor(Math.random() * 45) + 1;
-    if (!nums.includes(n)) nums.push(n);
+  const participantCount = db.prepare('SELECT COUNT(*) as c FROM draw_entries WHERE draw_id = ?').get(req.params.id).c;
+  const nums = createWinningNumbers(draw, participantCount);
+
+  db.prepare(`
+    UPDATE draws
+    SET status = 'published',
+        winning_numbers = ?,
+        published_at = datetime('now')
+    WHERE id = ?
+  `).run(JSON.stringify(nums), req.params.id);
+
+  const publishedDraw = db.prepare('SELECT * FROM draws WHERE id = ?').get(req.params.id);
+  const settled = settleDrawEntries(db, publishedDraw);
+  const jackpotRollover = settled.tierCounts['5-match']
+    ? 0
+    : Number((publishedDraw.total_pool * 0.40).toFixed(2));
+
+  db.prepare('UPDATE draws SET jackpot_carried = ? WHERE id = ?').run(jackpotRollover, req.params.id);
+
+  if (jackpotRollover > 0) {
+    const nextPendingDraw = db.prepare(`
+      SELECT * FROM draws
+      WHERE status = 'pending' AND id != ?
+      ORDER BY year ASC, month ASC, created_at ASC
+      LIMIT 1
+    `).get(req.params.id);
+
+    if (nextPendingDraw) {
+      db.prepare(`
+        UPDATE draws
+        SET jackpot_carried = COALESCE(jackpot_carried, 0) + ?,
+            total_pool = total_pool + ?
+        WHERE id = ?
+      `).run(jackpotRollover, jackpotRollover, nextPendingDraw.id);
+    }
   }
 
-  db.prepare(`UPDATE draws SET status = 'published', winning_numbers = ?, published_at = datetime('now') WHERE id = ?`)
-    .run(JSON.stringify(nums), req.params.id);
-
-  res.json({ message: 'Draw published', winningNumbers: nums });
+  res.json({
+    message: 'Draw published',
+    winningNumbers: nums,
+    totalParticipants: settled.totalParticipants,
+    winners: {
+      fiveMatch: settled.tierCounts['5-match'] || 0,
+      fourMatch: settled.tierCounts['4-match'] || 0,
+      threeMatch: settled.tierCounts['3-match'] || 0,
+    },
+    jackpotRollover,
+  });
 });
 
 // ── CHARITIES (admin) ──
@@ -222,12 +267,50 @@ router.get('/winners', (req, res) => {
 
 router.patch('/winners/:id/verify', (req, res) => {
   const db = getDb();
-  db.prepare("UPDATE draw_entries SET verified = 1, pay_status = 'verified' WHERE id = ?").run(req.params.id);
+  const winner = db.prepare('SELECT id, proof_url, prize_tier FROM draw_entries WHERE id = ?').get(req.params.id);
+  if (!winner || !winner.prize_tier) return res.status(404).json({ error: 'Winner entry not found.' });
+  if (!winner.proof_url) return res.status(400).json({ error: 'Winner proof is still required before approval.' });
+
+  db.prepare(`
+    UPDATE draw_entries
+    SET verified = 1,
+        proof_status = 'approved',
+        proof_note = NULL,
+        pay_status = 'verified'
+    WHERE id = ?
+  `).run(req.params.id);
+
   res.json({ message: 'Winner verified' });
+});
+
+router.patch('/winners/:id/reject', [
+  body('note').trim().notEmpty().withMessage('A rejection reason is required'),
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const db = getDb();
+  const winner = db.prepare('SELECT id, prize_tier FROM draw_entries WHERE id = ?').get(req.params.id);
+  if (!winner || !winner.prize_tier) return res.status(404).json({ error: 'Winner entry not found.' });
+
+  db.prepare(`
+    UPDATE draw_entries
+    SET verified = 0,
+        proof_status = 'rejected',
+        proof_note = ?,
+        pay_status = 'pending'
+    WHERE id = ?
+  `).run(req.body.note.trim(), req.params.id);
+
+  res.json({ message: 'Winner proof rejected' });
 });
 
 router.patch('/winners/:id/pay', (req, res) => {
   const db = getDb();
+  const winner = db.prepare('SELECT id, verified, prize_tier FROM draw_entries WHERE id = ?').get(req.params.id);
+  if (!winner || !winner.prize_tier) return res.status(404).json({ error: 'Winner entry not found.' });
+  if (!winner.verified) return res.status(400).json({ error: 'Winner must be verified before marking as paid.' });
+
   db.prepare("UPDATE draw_entries SET pay_status = 'paid' WHERE id = ?").run(req.params.id);
   res.json({ message: 'Marked as paid' });
 });

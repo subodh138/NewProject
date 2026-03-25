@@ -1,4 +1,5 @@
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('./database');
@@ -57,6 +58,24 @@ if (!drawExists) {
   db.prepare(`INSERT INTO draws (id,title,month,year,draw_type,status,winning_numbers,total_pool,published_at) VALUES (?,?,?,?,?,?,?,?,?)`)
     .run(uuidv4(), `${now.toLocaleString('default',{month:'long'})} ${now.getFullYear()} Draw`, now.getMonth()+1, now.getFullYear(), 'random', 'published', JSON.stringify([12,28,35,19,7]), 2400, now.toISOString());
   console.log('✅ Sample draw seeded');
+}
+
+const pendingDrawExists = db.prepare('SELECT id FROM draws WHERE status = ?').get('pending');
+if (!pendingDrawExists) {
+  const nextDrawDate = new Date();
+  nextDrawDate.setMonth(nextDrawDate.getMonth() + 1);
+  db.prepare(`INSERT INTO draws (id,title,month,year,draw_type,status,jackpot_carried,total_pool) VALUES (?,?,?,?,?,?,?,?)`)
+    .run(
+      uuidv4(),
+      `${nextDrawDate.toLocaleString('default', { month: 'long' })} ${nextDrawDate.getFullYear()} Draw`,
+      nextDrawDate.getMonth() + 1,
+      nextDrawDate.getFullYear(),
+      'random',
+      'pending',
+      0,
+      2600
+    );
+  console.log('✅ Upcoming pending draw seeded');
 }
 
 console.log('\n🏌️ Database ready. Run: npm run dev\n');

@@ -169,6 +169,9 @@
   <!-- LEFT: form -->
   <div class="signup-left">
     <div class="signup-box">
+      <div style="margin-bottom:20px;">
+        <a href="/" style="color:var(--text-muted);text-decoration:none;font-size:0.82rem;">← Back to home</a>
+      </div>
       <a href="/" class="gg-logo" style="display:block;margin-bottom:40px;">Green<span>Give</span></a>
 
       <!-- Step tracker -->
@@ -312,6 +315,9 @@
 <div id="gg-toast"></div>
 
 <script>
+  localStorage.removeItem('gg_token');
+  localStorage.removeItem('gg_user');
+
   let selectedCharityId = null;
   let selectedPlan = 'monthly';
   let currentStep = 1;
@@ -409,8 +415,8 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Signup failed');
 
-      localStorage.setItem('gg_token', data.token);
-      localStorage.setItem('gg_user', JSON.stringify(data.user));
+      sessionStorage.setItem('gg_token', data.token);
+      sessionStorage.setItem('gg_user', JSON.stringify(data.user));
 
       // 2. Subscribe to plan
       await fetch('/api/user/subscribe', {

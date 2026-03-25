@@ -85,6 +85,9 @@ function initSchema() {
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
 
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_draw_entries_unique_user_draw
+      ON draw_entries(draw_id, user_id);
+
     -- Payments / subscriptions log
     CREATE TABLE IF NOT EXISTS payments (
       id          TEXT PRIMARY KEY,
@@ -96,6 +99,26 @@ function initSchema() {
       FOREIGN KEY(user_id) REFERENCES users(id)
     );
   `);
+
+  ensureColumns('draw_entries', [
+    { name: 'submitted_scores', definition: 'TEXT DEFAULT NULL' },
+    { name: 'entered_at', definition: 'TEXT DEFAULT NULL' },
+    { name: 'proof_status', definition: "TEXT DEFAULT 'not_required'" },
+    { name: 'proof_submitted_at', definition: 'TEXT DEFAULT NULL' },
+    { name: 'proof_note', definition: 'TEXT DEFAULT NULL' },
+  ]);
+}
+
+function ensureColumns(tableName, columns) {
+  const existingColumns = new Set(
+    db.prepare(`PRAGMA table_info(${tableName})`).all().map((column) => column.name)
+  );
+
+  columns.forEach(({ name, definition }) => {
+    if (!existingColumns.has(name)) {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${name} ${definition}`);
+    }
+  });
 }
 
 module.exports = { getDb };
